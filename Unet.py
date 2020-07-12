@@ -104,9 +104,12 @@ class Refinement(nn.Module):
         """
         This layer crop the layer from contraction block and concat it with expansive block vector
         """
+        logging.debug("Before - Upsampled: {}".format(upsampled.size()))
+        logging.debug("Before - bypass: {}".format(bypass.size()))
         if crop:
-            c = (bypass.size()[2] - upsampled.size()[2]) // 2
-            bypass = F.pad(bypass, (-c, -c, -c, -c))
+            c1 = (bypass.size()[2] - upsampled.size()[2]) // 2
+            c2 = (bypass.size()[3] - upsampled.size()[3]) // 2
+            bypass = F.pad(bypass, (-c2, -c2, -c1, -c1))
         logging.debug("Upsampled: {}".format(upsampled.size()))
         logging.debug("bypass: {}".format(bypass.size()))
         return torch.cat((upsampled, bypass), 1)
