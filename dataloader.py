@@ -3,44 +3,56 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from skimage import io
 import glob
+import sys
+import numpy as np
 
 transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) 
+        transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))])
 
 
-class DocumentDeblurrDataset(Dataset):
-    def __init__(self, blurred_image_path, real_image_path, transform=None):
-        self.blurred_image_path = blurred_image_path
-        self.real_image_path = real_image_path
-        self.transform = transform
+class TwoDDataset(Dataset):
+    def __init__(self, image_path, mask_path, transform_image=None, transform_mask=None):
+        self.image_path = image_path
+        self.mask_path = mask_path
+        self.transform_image = transform_image
+        self.transform_mask = transform_mask
         self._add_images()
 
     def _add_images(self):
-        self.blurred_images = glob.glob(self.blurred_image_path + "n_*/*.png")
-        set_of_blurred_images = len(self.blurred_images)
-        self.real_images = glob.glob(self.real_image_path + "*.png")
-        total_ground_truth = len(self.real_images)
-        self.real_images = self.real_images*int((set_of_blurred_images/total_ground_truth))
+        self.images = glob.glob(self.image_path + "*.png")
+        self.masks = glob.glob(self.mask_path + "*.txt")
+        self.images.sort()
+        self.masks.sort()
+        self._check_valid_data(self.images, self.masks)
+
+    def _check_valid_data(self, images, masks):
+        images = [img[len(self.image_path):-4] for img in images]
+        masks = [m[len(self.mask_path):-4] for m in masks]
+        if images != masks:
+            sys.exit('Invalid dataset')
 
     def __len__(self):
-        return len(self.real_images)
+        return len(self.images)
 
     def __getitem__(self, idx):
-        blurred_img_name = self.blurred_images[idx]
-        real_image_name = self.real_images[idx]
-        blurred_image = io.imread(blurred_img_name)
-        real_image = io.imread(real_image_name)
+        img_name = self.images[idx]
+        mask_name = self.masks[idx]
+        image = io.imread(img_name)
+        mask_file = open(mask_name,"r") 
+        coordinate_list = mask_file.readlines()
+        coordinate_list = [x.strip('\n').split(' ') for x in coordinate_list]
+        coordinate_list = [[int(x[0]),int(x[1])] for x in coordinate_list]
 
-        if self.transform: 
-            blurred_image = self.transform(blurred_image)
-            real_image = self.transform(real_image)
+        mask = np.zeros((image.shape[0],image.shape[1],1), dtype='uint8')
+        for x,y in coordinate_list:
+            mask[y][x] = [255]
 
-        return (blurred_image, real_image)
+        if self.transform_image: 
+            image = self.transform_image(image)
+        if self.transform_mask:
+            mask = self.transform_mask(mask)
 
+        mask_file.close()
 
-if __name__ == "__main__":
-    d = DocumentDeblurrDataset("/home/swasti/Documents/PE/BMVC_image_quality_train_data/",
-                               "/home/swasti/Documents/PE/BMVC_image_quality_train_data/orig/",
-                               transform)
-    print(len(d))
+        return (image, mask)
