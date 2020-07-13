@@ -55,4 +55,25 @@ class TwoDDataset(Dataset):
 
         mask_file.close()
 
-        return (image, mask)
+        return (image, mask, coordinate_list)
+
+if __name__ == "__main__":
+    d = TwoDDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/images/",
+                                "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/labels/",
+                                transform_image=transforms.Compose([transforms.ToTensor(),
+                                             transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))]),
+                                transform_mask=transforms.Compose([transforms.ToTensor(),
+                                             transforms.Normalize(
+                                                 mean=[0],
+                                                    std=[1])]))
+
+    for i in range(len(d)):
+        sample = d[i]
+        c = 0
+        print(sample[1].shape)
+        for x in range(sample[1].shape[1]): 
+            for y in range(sample[1].shape[2]):
+                if sample[1][0][x][y]:
+                    print(sample[1][0][x][y])
+                    c += 1
+        break
