@@ -1,6 +1,6 @@
 # from Unet import UNet
 from MajdoorNet import MajdoorNet
-from dataloader import TwoDDataset
+from dataloader import TwoDDataset, TwoDNHeatmapDataset
 
 import torch
 import torch.nn as nn
@@ -18,7 +18,7 @@ import time
 
 class Trainer:
 
-    def __init__(self, model, optimizer, scheduler, num_epochs=25, batch_size=1):
+    def __init__(self, model, optimizer, scheduler, use_dataset='heatmap',num_epochs=25, batch_size=1):
         gc.collect()
         self.model = model
         self.optimizer = optimizer
@@ -27,9 +27,31 @@ class Trainer:
         if self.use_gpu:
             self.model.cuda()
         self.num_epochs = num_epochs
-        self.load_dataset(batch_size)
+        self.use_dataset = use_dataset
+        if self.use_dataset == 'heatmap':
+            self.load_heatmap_dataset(batch_size)
+        elif self.use_dataset == 'mask':
+            self.load_mask_dataset(batch_size)
 
-    def load_dataset(self, batch_size):
+    def load_heatmap_dataset(self, batch_size):
+        train_set = TwoDNHeatmapDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/images/",
+                                "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/labels/",
+                                transform=transforms.Compose([transforms.ToTensor(),
+                                             transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))]))
+        val_set = TwoDNHeatmapDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/val/images/",
+                              "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/val/labels/",
+                              transform=transforms.Compose([transforms.ToTensor(),
+                                             transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))]))
+        self.image_datasets = {
+            'train': train_set, 'val': val_set
+        }
+
+        self.dataloaders = {
+            'train': DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=12),
+            'val': DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=12)
+        }
+
+    def load_mask_dataset(self, batch_size):
         train_set = TwoDDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/images/",
                                 "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/labels/",
                                 transform_image=transforms.Compose([transforms.ToTensor(),
@@ -54,21 +76,31 @@ class Trainer:
             'val': DataLoader(val_set, batch_size=batch_size, shuffle=True, num_workers=12)
         }
 
-    def calculate_loss(self, pred, target, coordinate_list, metrics, info, bce_weight=0):
+    def calculate_loss(self, pred, target, coordinate_list, metrics, info=None, bce_weight=1):
         bce = F.binary_cross_entropy_with_logits(pred, target)
 
         pred = torch.sigmoid(pred)
-        # dice = dice_loss(pred, target)
+        dice = dice_loss(pred, target)
 
-        dist_loss = simple_distance_loss(pred, target, coordinate_list, self.use_gpu, info)
+        # dist_loss = simple_distance_loss(pred, target, coordinate_list, self.use_gpu, info)
 
-        loss = bce * bce_weight + dist_loss * (1 - bce_weight)
+        loss = bce * bce_weight + dice * (1 - bce_weight)
 
         metrics['bce'] += bce.data.cpu().numpy() * target.size(0)
-        metrics['dist_loss'] += dist_loss.data.cpu().numpy() * target.size(0)
+        metrics['dice'] += dice.data.cpu().numpy() * target.size(0)
+        # metrics['dist_loss'] += dist_loss.data.cpu().numpy() * target.size(0)
         metrics['loss'] += loss.data.cpu().numpy() * target.size(0)
         return loss
 
+    def calculate_heatmap_loss(self, pred, target, metrics):
+        criterion = nn.MSELoss()
+        pred = pred.squeeze()
+        loss = criterion(pred, target)
+        loss = loss.type(torch.float32)
+
+        metrics['loss'] += loss.data.cpu().numpy() * target.size(0)
+
+        return loss
 
     def print_metrics(self, metrics, epoch_samples, phase):
         outputs = []
@@ -80,7 +112,7 @@ class Trainer:
     def train(self):
         best_model_wts = copy.deepcopy(self.model.state_dict())
         best_loss = 1e10
-        PATH = "model/majdoornet_dist_loss.pt"
+        PATH = "model/majdoornet_heatmap_loss.pt"
 
         for epoch in range(self.num_epochs):
             print('Epoch {}/{}'.format(epoch, self.num_epochs - 1))
@@ -98,15 +130,16 @@ class Trainer:
                 metrics = defaultdict(float)
                 epoch_samples = 0
 
-                info = { 'phase': phase, 'epoch': epoch }
-                if epoch != 0:
-                    f = open(info['phase']+'.npy', 'rb')
-                    info['array_file'] = f
+                if self.use_dataset == 'mask':
+                    info = { 'phase': phase, 'epoch': epoch }
+                    if epoch != 0:
+                        f = open(info['phase']+'.npy', 'rb')
+                        info['array_file'] = f
 
-                for images, masks, coordinate_list in tqdm(self.dataloaders[phase]):
+                for images, heatmaps, coordinate_list in tqdm(self.dataloaders[phase]):
                     if self.use_gpu:
                         images = images.cuda()
-                        masks = masks.cuda()
+                        heatmaps = heatmaps.cuda()
 
                     # zero the parameter gradients
                     self.optimizer.zero_grad()
@@ -115,7 +148,9 @@ class Trainer:
                     # track history if only in train
                     with torch.set_grad_enabled(phase == 'train'):
                         outputs = self.model(images)
-                        loss = self.calculate_loss(outputs, masks, coordinate_list, metrics, info)
+                        # loss = self.calculate_heatmap_loss(outputs, heatmaps, metrics)
+                        loss = self.calculate_loss(outputs, heatmaps, coordinate_list, metrics)
+                        # loss = self.calculate_loss(outputs, masks, coordinate_list, metrics, info) # use with heatmap dataset
 
                         # backward + optimize only if in training phase
                         if phase == 'train':
@@ -138,9 +173,10 @@ class Trainer:
                     best_model_wts = copy.deepcopy(self.model.state_dict())
                     torch.save(self.model.state_dict(), PATH)
 
-                if epoch != 0:
-                    info['array_file'].close()
-                    
+                if self.use_dataset == 'mask':
+                    if epoch != 0:
+                        info['array_file'].close()
+
             time_elapsed = time.time() - since
             print('{:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
 
