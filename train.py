@@ -34,12 +34,12 @@ class Trainer:
             self.load_mask_dataset(batch_size)
 
     def load_heatmap_dataset(self, batch_size):
-        train_set = TwoDNHeatmapDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/images/",
-                                "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/labels/",
+        train_set = TwoDNHeatmapDataset("data/train/images/",
+                                "data/train/labels/",
                                 transform=transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))]))
-        val_set = TwoDNHeatmapDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/val/images/",
-                              "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/val/labels/",
+        val_set = TwoDNHeatmapDataset("data/val/images/",
+                              "data/val/labels/",
                               transform=transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))]))
         self.image_datasets = {
@@ -52,16 +52,16 @@ class Trainer:
         }
 
     def load_mask_dataset(self, batch_size):
-        train_set = TwoDDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/images/",
-                                "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/train/labels/",
+        train_set = TwoDDataset("data/train/images/",
+                                "data/train/labels/",
                                 transform_image=transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))]),
                                 transform_mask=transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize(
                                                  mean=[0],
                                                     std=[1])]))
-        val_set = TwoDDataset("/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/val/images/",
-                              "/home/swasti/Documents/hackathon/Room-Layout-Estimation/data/val/labels/",
+        val_set = TwoDDataset("data/val/images/",
+                              "data/val/labels/",
                               transform_image=transforms.Compose([transforms.ToTensor(),
                                              transforms.Normalize((0.5, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5))]),
                               transform_mask=transforms.Compose([transforms.ToTensor(),
